@@ -173,7 +173,7 @@ if(FLAG_RAW):
     ax[2].title.set_text("Recovered")
 
 
-#%% Matrix imputation
+#%% Matrix nuking
 
 # H_df = pd.DataFrame(measurement_matrix)
 
@@ -199,18 +199,22 @@ for i in rows_to_nuke:
     # plt.imshow(delta_image)
     # plt.show()
 
-H_nuked_diag = np.diag(x)
-
+H_nuked_diag = np.diag(H_nuked)
+H_nuked_diag.shape
 nans_in_H = np.sum(np.isnan(H_nuked_diag))
 nans_not_in_H = np.sum(~np.isnan(H_nuked_diag))
 
-ratio_nan = (nans_not_in_H-nans_in_H)/2*(nans_in_H+nans_not_in_H);
-print(f'Nans n H: {nans_in_H} \t Ratio: {nans_in_H/nans_not_in_H}')
+pd_nan = (nans_not_in_H-nans_in_H)/2*(nans_in_H+nans_not_in_H);
+ratio = nans_in_H/H_nuked_diag.shape
+print(f'Nans in H: {nans_in_H} | Ratio: {ratio}')
 
-plt.savefig("output/H_nuked.png")
 plt.imshow(H_nuked)
+plt.imsave('output/H_nuked.png', H_nuked)
 # imp = SimpleImputer(missing_values=np.NaN, strategy='mean',verbose=1)
-imp = IterativeImputer(missing_values=np.NaN,verbose=1)
+from sklearn.linear_model import BayesianRidge
+#%% Matrix impute
+
+imp = IterativeImputer(missing_values=np.NaN,verbose=2,estimator=BayesianRidge())
 imp.fit(H_nuked)
 H_fixed = imp.transform(H_nuked)
 
