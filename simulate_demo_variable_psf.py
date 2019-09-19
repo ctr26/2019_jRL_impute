@@ -218,4 +218,5 @@ error = measurement_matrix - H_fixed
 sum_error = np.sum(np.sum(error))
 sum_error
 # plt.show()
+plt.savefig("output/H_fixed.png")
 plt.imshow(H_fixed)
