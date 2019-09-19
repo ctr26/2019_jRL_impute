@@ -184,7 +184,7 @@ rows_to_nuke = np.random.choice(np.arange(measurement_matrix.shape[0]),measureme
 # rows_to_nuke=np.random.choice(np.arange(0,measurement_matrix.shape[0]), measurement_matrix.shape[0]-beads, replace=False);rows_to_nuke
 # rows_to_nuke = (np.rint(np.random.choice(H.shape[0]-beads))*H.shape[0]).astype(int)
 H_nuked = measurement_matrix.copy()
-H_nuked
+
 for i in rows_to_nuke:
     ones_image = np.ones_like(astro)
     delta_image = np.zeros_like(astro)
@@ -198,14 +198,17 @@ for i in rows_to_nuke:
     # delta_PSF = psf_xy
     # plt.imshow(delta_image)
     # plt.show()
-nans_in_H = np.sum(~np.isnan(H_nuked));
-nans_not_in_H = np.sum(~np.isnan(H_nuked))
-ratio_nan = (nans_in_H-nans_not_in_H)/2*(nans_in_H+nans_not_in_H);
-print(f'Nans n H: {nans_in_H} \t Ratio: {ratio_nan}'])
-H_nuked.shape
-plt.imshow(H_nuked)
-plt.savefig("output/H_nuked.png")
 
+H_nuked_diag = np.diag(x)
+
+nans_in_H = np.sum(np.isnan(H_nuked_diag))
+nans_not_in_H = np.sum(~np.isnan(H_nuked_diag))
+
+ratio_nan = (nans_not_in_H-nans_in_H)/2*(nans_in_H+nans_not_in_H);
+print(f'Nans n H: {nans_in_H} \t Ratio: {nans_in_H/nans_not_in_H}')
+
+plt.savefig("output/H_nuked.png")
+plt.imshow(H_nuked)
 # imp = SimpleImputer(missing_values=np.NaN, strategy='mean',verbose=1)
 imp = IterativeImputer(missing_values=np.NaN,verbose=1)
 imp.fit(H_nuked)
