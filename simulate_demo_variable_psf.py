@@ -157,6 +157,9 @@ psf_window_volume_nuked[:,:,rows_to_nuke] = np.NaN
 X_indices = np.array(np.unravel_index(np.arange(0,psf_window_volume.size), psf_window_volume.shape)).T
 y_values = np.array(psf_window_volume_nuked.flatten())
 
+# from scipy import interpolate
+# rbfi = interpolate.Rbf(X_indices[:,0],X_indices[:,1],X_indices[:,2],y_values)
+
 X_indices_clean = X_indices[np.isfinite(y_values)]
 y_values_clean = y_values[np.isfinite(y_values)]
 
