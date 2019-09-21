@@ -124,11 +124,15 @@ astro_shape = astro.shape
 
 x_astro,y_astro = astro_blur.shape
 xx_astro,yy_astro = np.meshgrid(np.linspace(-1,1,x_astro),np.linspace(-1,1,y_astro))
+psf_window_w,psf_window_h = (10,10)
+psf_window_volume = np.full((psf_window_w,psf_window_h,N_v),np.NaN)
+
 
 for i in np.arange(N_v):
     coords = np.unravel_index(i,astro.shape)
     r_dist = np.sqrt(xx_astro[coords]**2+yy_astro[coords]**2)
-    psf_current = psf_guass(w=10, h=10, sigma=1/(5+5*r_dist))
+    psf_current = psf_guass(w=psf_window_w, h=psf_window_h, sigma=1/(5+5*r_dist))
+    psf_window_volume[:,:,i] = psf_current
     delta_image = np.zeros_like(astro)
     delta_image[np.unravel_index(i,astro_shape)] = 1
     delta_PSF = scipy.ndimage.convolve(delta_image,psf_current)
@@ -139,6 +143,77 @@ astro_noisy_vector = np.matrix(astro_noisy.flatten()).transpose();astro_noisy_ve
 plt.imshow(measurement_matrix)
 # plt.show()
 plt.imshow(static_psf)
+
+#%% Begin RL matrix deconvolvution
+print("Regress full PSF model")
+
+beads = 100
+
+rows_to_nuke = np.random.choice(np.arange(measurement_matrix.shape[0]),measurement_matrix.shape[0]-beads)
+# rows_to_nuke
+psf_window_volume_nuked = psf_window_volume.copy()
+psf_window_volume_nuked[:,:,rows_to_nuke] = np.NaN
+
+X_indices = np.array(np.unravel_index(np.arange(0,psf_window_volume.size), psf_window_volume.shape)).T
+y_values = np.array(psf_window_volume_nuked.flatten())
+
+X_indices_clean = X_indices[np.isfinite(y_values)]
+y_values_clean = y_values[np.isfinite(y_values)]
+
+y_values_clean_2d = np.vstack(y_values_clean)
+
+from sklearn import linear_model
+from sklearn import svm
+from scipy.stats import pearsonr
+from sklearn import neural_network
+from sklearn import metrics
+from sklearn import gaussian_process
+from sklearn import preprocessing
+from sklearn import svm
+
+classifiers = [
+    # svm.SVR(),
+    neural_network.MLPRegressor(hidden_layer_sizes=(64,64),
+                                verbose=True),
+    # svm.SVR(),
+    # gaussian_process.GaussianProcessRegressor(),
+    # linear_model.SGDRegressor(),
+    # linear_model.BayesianRidge(),
+    # linear_model.LassoLars(),
+    # linear_model.ARDRegression(),
+    # linear_model.PassiveAggressiveRegressor(),
+    # linear_model.TheilSenRegressor(),
+    # linear_model.LinearRegression()
+    ]
+
+#Maybe standard scalar first then reverse.
+
+y_ground_truth = psf_window_volume.flatten()
+
+X_indices_clean_scaled = preprocessing.scale(X_indices_clean)
+X_indices_scaled = preprocessing.scale(X_indices)
+
+y_values_clean_2d_scaled = preprocessing.scale(y_values_clean_2d)
+y_ground_truth_scaled = preprocessing.scale(y_ground_truth)
+
+for classifier in classifiers:
+    # print(classifier)
+    name = classifier.__module__;name
+    print(f'{name}')
+    classifier.fit(X_indices_clean_scaled, y_values_clean_2d_scaled)
+    y_values_predict_scaled = classifier.predict(X_indices_scaled)
+    score = classifier.score(X_indices_scaled,y_ground_truth_scaled)
+    mse = metrics.mean_squared_error(y_ground_truth_scaled,y_values_predict_scaled)
+    r2 = metrics.r2_score(y_ground_truth_scaled,y_values_predict_scaled)
+    # classifier.score()
+    correlation,p_value = pearsonr(y_ground_truth_scaled,y_values_predict_scaled)
+    print(f'Correlation: {correlation:.5f} | MSE:{mse:.5f} |  R2:{r2:.5f}  | Score:{score:.5f}')
+plt.scatter(y_ground_truth_scaled,y_values_predict_scaled)
+score
+correlation
+# from sklearn.neural_network import MLPClassifier
+
+
 #%% Begin RL matrix deconvolvution
 print("Build measurement matrix.")
 #
@@ -209,7 +284,7 @@ ratio = nans_in_H/H_nuked_diag.shape
 print(f'Nans in H: {nans_in_H} | Ratio: {ratio}')
 
 plt.imshow(H_nuked)
-plt.imsave('output/H_nuked.png', H_nuked)
+plt.imsave('./output/H_nuked.png', H_nuked)
 # imp = SimpleImputer(missing_values=np.NaN, strategy='mean',verbose=1)
 from sklearn.linear_model import BayesianRidge
 #%% Matrix impute
