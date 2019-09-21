@@ -189,8 +189,9 @@ classifiers = [
     # linear_model.LinearRegression()
     ]
 
-#Maybe standard scalar first then reverse.
+#Need to invert scaling
 
+#
 y_ground_truth = psf_window_volume.flatten()
 
 X_indices_clean_scaled = preprocessing.scale(X_indices_clean)
@@ -199,21 +200,22 @@ X_indices_scaled = preprocessing.scale(X_indices)
 y_values_clean_2d_scaled = preprocessing.scale(y_values_clean_2d)
 y_ground_truth_scaled = preprocessing.scale(y_ground_truth)
 
-for classifier in classifiers:
+# for classifier in classifiers:
     # print(classifier)
-    name = classifier.__module__;name
-    print(f'{name}')
-    classifier.fit(X_indices_clean_scaled, y_values_clean_2d_scaled)
-    y_values_predict_scaled = classifier.predict(X_indices_scaled)
-    score = classifier.score(X_indices_scaled,y_ground_truth_scaled)
-    mse = metrics.mean_squared_error(y_ground_truth_scaled,y_values_predict_scaled)
-    r2 = metrics.r2_score(y_ground_truth_scaled,y_values_predict_scaled)
-    # classifier.score()
-    correlation,p_value = pearsonr(y_ground_truth_scaled,y_values_predict_scaled)
-    print(f'Correlation: {correlation:.5f} | MSE:{mse:.5f} |  R2:{r2:.5f}  | Score:{score:.5f}')
-plt.scatter(y_ground_truth_scaled,y_values_predict_scaled)
-score
-correlation
+classifier = neural_network.MLPRegressor(hidden_layer_sizes=(64,64),
+                            verbose=True)
+
+name = classifier.__module__
+print(f'{name}')
+classifier.fit(X_indices_clean_scaled, y_values_clean_2d_scaled)
+y_values_predict_scaled = classifier.predict(X_indices_scaled)
+score = classifier.score(X_indices_scaled,y_ground_truth_scaled)
+mse = metrics.mean_squared_error(y_ground_truth_scaled,y_values_predict_scaled)
+r2 = metrics.r2_score(y_ground_truth_scaled,y_values_predict_scaled)
+# classifier.score()
+correlation,p_value = pearsonr(y_ground_truth_scaled,y_values_predict_scaled)
+print(f'Correlation: {correlation:.5f} | MSE:{mse:.5f} |  R2:{r2:.5f}  | Score:{score:.5f}')
+# plt.scatter(y_ground_truth_scaled,y_values_predict_scaled)
 # from sklearn.neural_network import MLPClassifier
 
 
