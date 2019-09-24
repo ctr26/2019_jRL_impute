@@ -70,6 +70,12 @@ from scipy.signal import convolve2d as conv2
 # import matlab.engine
 import pandas as pd
 
+import keras
+from keras.models import Sequential
+from keras.wrappers.scikit_learn import KerasRegressor
+from keras.layers import Dense, Dropout, Activation, Convolution1D, Flatten
+from keras.optimizers import SGD
+from keras.utils import to_categorical
 
 from sklearn.preprocessing import Imputer
 from sklearn.experimental import enable_iterative_imputer
@@ -96,6 +102,7 @@ def psf_guass(w=10,h=10,sigma=3):
 
 static_psf =  psf_guass(w=10, h=10, sigma=1/5)
 plt.imshow(static_psf)
+
 
 astro = rescale(color.rgb2gray(data.astronaut()),1.0/scale);
 astro_blur = conv2(astro, static_psf, 'same')# astro_blur = rescale(astro_blur, 1.0 / 4)
@@ -127,22 +134,33 @@ xx_astro,yy_astro = np.meshgrid(np.linspace(-1,1,x_astro),np.linspace(-1,1,y_ast
 psf_window_w,psf_window_h = (10,10)
 psf_window_volume = np.full((psf_window_w,psf_window_h,N_v),np.NaN)
 
+illumination = np.cos(64/2*np.pi*xx_astro)
+
+def sigma_scale(r_dist):
+    return (r_dist+0.1)*3
 
 for i in np.arange(N_v):
     coords = np.unravel_index(i,astro.shape)
     r_dist = np.sqrt(xx_astro[coords]**2+yy_astro[coords]**2)
-    psf_current = psf_guass(w=psf_window_w, h=psf_window_h, sigma=1/(5+5*r_dist))
+    psf_current = psf_guass(w=psf_window_w,
+                            h=psf_window_h,
+                            sigma=sigma_scale(r_dist))*illumination[coords]
+    psf_current = psf_guass(w=psf_window_w,
+                            h=psf_window_h,
+                            sigma=sigma_scale(r_dist))
     psf_window_volume[:,:,i] = psf_current
     delta_image = np.zeros_like(astro)
     delta_image[np.unravel_index(i,astro_shape)] = 1
     delta_PSF = scipy.ndimage.convolve(delta_image,psf_current)
     measurement_matrix[i,:] = delta_PSF.flatten()
+
     # plt.imshow(delta_image)
     # plt.show()
+# pd.DataFrame(measurement_matrix)
 astro_noisy_vector = np.matrix(astro_noisy.flatten()).transpose();astro_noisy_vector
-plt.imshow(measurement_matrix)
+# plt.imshow(measurement_matrix)
 # plt.show()
-plt.imshow(static_psf)
+# plt.imshow(static_psf)
 
 #%% Begin RL matrix deconvolvution
 print("Regress full PSF model")
@@ -168,16 +186,40 @@ y_values_clean_2d = np.vstack(y_values_clean)
 from sklearn import linear_model
 from sklearn import svm
 from scipy.stats import pearsonr
-from sklearn import neural_network
-from sklearn import metrics
-from sklearn import gaussian_process
-from sklearn import preprocessing
-from sklearn import svm
+from sklearn import neural_network,metrics,gaussian_process,preprocessing,svm
+
+
+def keras_model():
+    model = Sequential()
+    # Dense(64) is a fully-connected layer with 64 hidden units.
+    # in the first layer, you must specify the expected input data shape:
+    # here, 20-dimensional vectors.
+    model.add(Dense(128, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(64, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(1, activation='relu'))
+    # if(FLAG_STANDARD_SCALAR):
+    #     model.add(Dense(1, activation='sigmoid'))
+    # if(not(FLAG_STANDARD_SCALAR)):
+    #     model.add(Dense(1, activation='relu'))
+    # loss = 'mean_squared_error'
+
+    model.compile(loss=loss,
+                  optimizer='adam',
+                  metrics=['accuracy'])
+    # model.fit(train_x, train_y,
+    #           epochs=1000,
+    #           batch_size=1,
+    #           verbose=0)
+    return model
+
 
 classifiers = [
     # svm.SVR(),
     neural_network.MLPRegressor(hidden_layer_sizes=(64,64),
                                 verbose=True),
+    KerasRegressor(build_fn=keras_model, epochs=100,nb_epoch=100,batch_size=64, verbose=1),
     # svm.SVR(),
     # gaussian_process.GaussianProcessRegressor(),
     # linear_model.SGDRegressor(),
@@ -202,8 +244,7 @@ y_ground_truth_scaled = preprocessing.scale(y_ground_truth)
 
 # for classifier in classifiers:
     # print(classifier)
-classifier = neural_network.MLPRegressor(hidden_layer_sizes=(64,64),
-                            verbose=True)
+classifier = classifiers[1]
 
 name = classifier.__module__
 print(f'{name}')
