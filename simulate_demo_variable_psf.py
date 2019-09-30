@@ -1,59 +1,3 @@
-# Can use Richardson Lucy to deconvolve with a spatially varying PSF
-# 1) Use spatially invariant PSF for RL on skimage image
-# 2) Use spatially varying PSF for RL on skimage
-#   How do abberate  - skip
-# 3) Put NaNs in matrix and impute
-
-# https://scikit-learn.org/stable/modules/impute.html
-# https://en.wikipedia.org/wiki/Matrix_completion
-# https://en.wikipedia.org/wiki/Netflix_Prize
-# https://stackoverflow.com/questions/17982931/matrix-completion-in-python
-
-# https://scikit-image.org/docs/dev/api/skimage.restoration.html#skimage.restoration.richardson_lucy
-#
-# '''
-# Richardson-Lucy algorithm
-#
-# Ported from the RestoreTools MATLAB package available at:
-# http://www.mathcs.emory.edu/~nagy/RestoreTools/
-#
-# Input: A  -  object defining the coefficient matrix.
-#        b  -  Right hand side vector.
-#
-#  Optional Intputs:
-#
-#        x0      - initial guess (must be strictly positive); default is x0 = A.T*b
-#        sigmaSq - the square of the standard deviation for the
-#                  white Gaussian read noise (variance)
-#        beta    - Poisson parameter for background light level
-#        max_iter - integer specifying maximum number of iterations;
-#                   default is 100
-#        Rtol    - stopping tolerance for the relative residual,
-#                  norm(b - A*x)/norm(b)
-#                  default is 1e-6
-#        NE_Rtol - stopping tolerance for the relative residual,
-#                  norm(A.T*b - A.T*A*x)/norm(A.T*b)
-#                  default is 1e-6
-#
-# Output:
-#       x  -  solution
-#
-# Original MATLAB code by J. Nagy, August, 2011
-#
-# References:
-# [1]  B. Lucy.
-#     "An iterative method for the rectication of observed distributions."
-#      Astronomical Journal, 79:745-754, 1974.
-# [2]  W. H. Richardson.
-#     "Bayesian-based iterative methods for image restoration.",
-#      J. Optical Soc. Amer., 62:55-59, 1972.
-#  [3]  C. R. Vogel.
-#     "Computational Methods for Inverse Problems",
-#     SIAM, Philadelphia, PA, 2002
-#
-#
-# '''
-
 import numpy as np
 import matplotlib.pyplot as plt
 # import microscPSF.microscPSF as msPSF
@@ -73,7 +17,7 @@ import pandas as pd
 import keras
 from keras.models import Sequential
 from keras.wrappers.scikit_learn import KerasRegressor
-from keras.layers import Dense, Dropout, Activation, Convolution1D, Flatten
+from keras.layers import Dense, Dropout, Activation, Convolution1D, Flatten, Conv1D,UpSampling1D,InputLayer,UpSampling2D,Conv2D,Reshape,Input
 from keras.optimizers import SGD
 from keras.utils import to_categorical
 
@@ -136,33 +80,57 @@ psf_window_volume = np.full((psf_window_w,psf_window_h,N_v),np.NaN)
 
 illumination = np.cos(64/2*np.pi*xx_astro)
 
-def sigma_scale(r_dist):
-    return (r_dist+0.1)*3
+plt.imshow(psf_guass(w=psf_window_w,
+                    h=psf_window_h,
+                    sigma=sigma_scale(1)))
 
+def sigma_scale(r_dist):
+    return (r_dist+0.01)*3
+
+
+r_map = np.sqrt(xx_astro**2+yy_astro**2)
+
+psf_current = psf_guass(w=psf_window_w,
+                        h=psf_window_h,
+                        sigma=sigma_scale(r_map.max().max()))
+plt.imshow(psf_current)
+
+r_dist = np.empty(N_v)
+sigma = np.empty(N_v)
+psf_window_volume = np.empty((10,10,N_v))
+
+plt.imshow(r_map)
+plt.imshow(illumination)
+# for i in np.arange(N_v):
+#     coords = np.unravel_index(i,astro.shape)
+#     print(r_map[coords])
 for i in np.arange(N_v):
     coords = np.unravel_index(i,astro.shape)
-    r_dist = np.sqrt(xx_astro[coords]**2+yy_astro[coords]**2)
+    r_dist = r_map[coords]
+    sigma = sigma_scale(r_map[coords])
     psf_current = psf_guass(w=psf_window_w,
                             h=psf_window_h,
-                            sigma=sigma_scale(r_dist))*illumination[coords]
-    psf_current = psf_guass(w=psf_window_w,
-                            h=psf_window_h,
-                            sigma=sigma_scale(r_dist))
+                            sigma=sigma*illumination[coords])
+    # psf_current = psf_guass(w=psf_window_w,
+    #                         h=psf_window_h,
+    #                         sigma=sigma[i])
     psf_window_volume[:,:,i] = psf_current
     delta_image = np.zeros_like(astro)
     delta_image[np.unravel_index(i,astro_shape)] = 1
     delta_PSF = scipy.ndimage.convolve(delta_image,psf_current)
     measurement_matrix[i,:] = delta_PSF.flatten()
-
-    # plt.imshow(delta_image)
-    # plt.show()
+    # plt.imshow(psf_current)
+    # plt.imsave(f'./output/psfs/{str(i).zfill(6)}.png',psf_window_volume[:,:,i])
+    plt.show()
 # pd.DataFrame(measurement_matrix)
-astro_noisy_vector = np.matrix(astro_noisy.flatten()).transpose();astro_noisy_vector
+astro_noisy_vector = np.matrix(astro_noisy.flatten()).transpose();
 # plt.imshow(measurement_matrix)
 # plt.show()
 # plt.imshow(static_psf)
 
-#%% Begin RL matrix deconvolvution
+#%% Begin RL matrix deconvolvution - Nuke beads
+
+
 print("Regress full PSF model")
 
 beads = 100
@@ -183,43 +151,52 @@ y_values_clean = y_values[np.isfinite(y_values)]
 
 y_values_clean_2d = np.vstack(y_values_clean)
 
+#%% NN models
+
 from sklearn import linear_model
 from sklearn import svm
 from scipy.stats import pearsonr
-from sklearn import neural_network,metrics,gaussian_process,preprocessing,svm
+from sklearn import neural_network,metrics,gaussian_process,preprocessing,svm,neighbors
 
 
-def keras_model():
+def keras_model_cov():
     model = Sequential()
-    # Dense(64) is a fully-connected layer with 64 hidden units.
-    # in the first layer, you must specify the expected input data shape:
-    # here, 20-dimensional vectors.
+    model.add(InputLayer(input_shape=X_indices_clean_scaled.shape))
+    model.add(Conv1D(filters=16, kernel_size=1, activation='relu'))
+    model.add(UpSampling1D(size=2))
+    model.add(Conv1D(filters=16, kernel_size=1, activation='relu'))
+    # model.add(UpSampling1D(size=2))
+    # model.add(Conv1D(filters=16, kernel_size=1, activation='relu'))
+    # model.add(UpSampling1D(size=2))
+    # model.add(Conv1D(filters=16, kernel_size=1, activation='relu'))
+    model.add(UpSampling1D(size=2))
+    model.add(Dense(256, activation='relu'))
+    # model.add(Dropout(0.5))
+    # model.add(Dense(256, activation='relu'))
+    model.compile(loss='mean_squared_error',
+                  optimizer='adam',
+                  metrics=['accuracy'])
+    return model
+
+def keras_model_fc():
+    model = Sequential()
     model.add(Dense(128, activation='relu'))
     model.add(Dropout(0.5))
     model.add(Dense(64, activation='relu'))
     model.add(Dropout(0.5))
     model.add(Dense(1, activation='relu'))
-    # if(FLAG_STANDARD_SCALAR):
-    #     model.add(Dense(1, activation='sigmoid'))
-    # if(not(FLAG_STANDARD_SCALAR)):
-    #     model.add(Dense(1, activation='relu'))
-    # loss = 'mean_squared_error'
-
-    model.compile(loss=loss,
+    model.compile(loss='mean_squared_error',
                   optimizer='adam',
                   metrics=['accuracy'])
-    # model.fit(train_x, train_y,
-    #           epochs=1000,
-    #           batch_size=1,
-    #           verbose=0)
     return model
-
 
 classifiers = [
     # svm.SVR(),
-    neural_network.MLPRegressor(hidden_layer_sizes=(64,64),
-                                verbose=True),
-    KerasRegressor(build_fn=keras_model, epochs=100,nb_epoch=100,batch_size=64, verbose=1),
+    # neural_network.MLPRegressor(hidden_layer_sizes=(64,64),
+    #                             verbose=True),
+    # neighbors.KNeighborsRegressor(),
+    KerasRegressor(build_fn=keras_model_cov, epochs=100,nb_epoch=100,batch_size=64, verbose=1),
+    KerasRegressor(build_fn=keras_model_fc, epochs=100,nb_epoch=100,batch_size=64, verbose=1)
     # svm.SVR(),
     # gaussian_process.GaussianProcessRegressor(),
     # linear_model.SGDRegressor(),
@@ -233,7 +210,9 @@ classifiers = [
 
 #Need to invert scaling
 
-#
+
+
+#%%
 y_ground_truth = psf_window_volume.flatten()
 
 X_indices_clean_scaled = preprocessing.scale(X_indices_clean)
@@ -242,6 +221,145 @@ X_indices_scaled = preprocessing.scale(X_indices)
 y_values_clean_2d_scaled = preprocessing.scale(y_values_clean_2d)
 y_ground_truth_scaled = preprocessing.scale(y_ground_truth)
 
+
+batch_size = 32
+
+# DO IT ALL IN 2D
+
+from keras import backend as K
+
+# (*X_indices_scaled.shape,1)
+# histor = the_model.fit(X_indices_clean_scaled, y_values_clean_2d_scaled)
+# X_indices_scaled.shape
+X_indices_scaled.shape
+samples = X_indices_scaled.shape[0]
+feature_size = 3
+
+x = np.expand_dims(X_indices_scaled,-1)
+
+
+model = Sequential()
+layer_shape = 2
+model.add(Dense(layer_shape, activation='relu'))
+for i in np.arange(0,5):
+    model.add(Reshape((layer_shape,1,1)))
+    model.add(UpSampling2D(size=(2,1)))
+    model.add(Reshape((layer_shape*2,1)))
+    model.add(Conv1D(filters=1,kernel_size=2, activation='relu'))
+    model.add(Flatten())
+    model.add(Dropout(0.5))
+
+    layer_shape = layer_shape*2-1
+
+# model.add(Reshape((3,1,1)))
+# model.add(UpSampling2D(size=(2,1)))
+# model.add(Reshape((6,1)))
+# model.add(Conv1D(filters=1,kernel_size=2, activation='relu'))
+# model.add(Flatten())
+#
+# model.add(Reshape((5,1,1)))
+# model.add(UpSampling2D(size=(2,1)))
+# model.add(Reshape((10,1)))
+# model.add(Conv1D(filters=1,kernel_size=2, activation='relu'))
+# model.add(Flatten())
+model.add(Dense(128, activation='relu'))
+model.add(Dropout(0.5))
+model.add(Dense(100, activation='relu'))
+model.compile(loss='mean_squared_error',
+              optimizer='adam',
+              metrics=['accuracy'])
+model.compile(loss='adadelta',
+              optimizer='adam',
+              metrics=['accuracy'])
+model.compile(loss='logcosh',
+              optimizer='sgd',
+              metrics=['accuracy'])
+model.build()
+
+from keras import metrics
+# model.compile(loss='logcosh',
+#               optimizer='adam',
+#               metrics=metrics.mae, metrics.accuracy])
+# return model
+# model.build()
+# model.summary()
+x = np.array(np.unravel_index(np.arange(0,astro.size),astro.shape)).T
+y = np.reshape(psf_window_volume,(100,int(samples/100))).T
+
+# plt.imshow(psf_window_volume[:,:,int(128/4*127/4)])
+model.fit(x, y,
+          batch_size=1,
+          epochs=100)
+model.summary()
+
+coords = np.unravel_index(i,astro.shape)
+
+# plt.imshow()
+y_predict = model.predict(x)
+for i in np.arange(N_v):
+    y_predict_current = y_predict[i,:].reshape((10,10))
+    plt.imsave(f'./output/predict_psf/{str(i).zfill(6)}.png',y_predict_current)
+# plt.imsave(,)
+
+# np.nansum(np.sqrt(y_predict**2-y**2))
+
+plt.imshow(a.reshape((10,10)))
+
+plt.imshow(psf_window_volume[:,:,].reshape((10,10)))
+samples = psf_window_volume_nuked.shape[2]
+
+
+# model.add(Reshape(target_shape=(feature_size,1)))
+# model.add(Conv1D(filters=1,kernel_size=2, activation='relu'))
+
+# model.add(Dense(128, activation='relu'))
+# model.add(Flatten())
+# model.add(InputLayer(input_shape=(3,)))
+# model.add(Reshape((3,1,1)))
+# model.add(UpSampling2D(size=(2,1)))
+# model.add(Flatten())
+
+# model.add(Dense(128, activation='relu'))
+# model.add(Dropout(0.5))
+# model.add(Dense(64, activation='relu'))
+# model.add(Dropout(0.5))
+# model.add(Dense(1, activation='relu'))
+
+# model.add(Reshape(target_shape=(feature_size,1,1,1)))
+
+# upsampler =
+# K.int_shape(upsampler)
+# model.add(Reshape((3,1)))
+# model.add(Flatten())
+# model.add(UpSampling2D(size=(2,1)))
+# model.add(Flatten())
+# model.add(Reshape(target_shape=(feature_size*2,1)))
+# model.add(Conv1D(filters=1,kernel_size=1, activation='relu',input_shape=(feature_size*2,1)))
+
+# model.add(Reshape(target_shape=(samples,feature_size,1)))
+# model.add(Flatten())
+# model.add(Reshape((3,1,1)))
+# model.add(Flatten())
+# model.add(Reshape((1,3)))
+# model.add(Flatten())
+# model.add(Conv2D(filters=0, kernel_size=1, activation='relu',input_shape=(3,1,1)))
+# model.add(UpSampling2D(size=(2,1)))
+# model.add(UpSampling1D(size=2))
+# model.add(Reshape((3,1)))
+# model.add(Conv1D(filters=1, kernel_size=10 ,strides=10,
+#                   input_shape=(None, 3),kernel_initializer= 'uniform',
+#                   activation= 'relu'))
+# # model.add(UpSampling1D(size=2))
+# # model.add(Conv1D(filters=16, kernel_size=1, activation='relu'))
+# # model.add(UpSampling1D(size=2))
+# # model.add(Conv1D(filters=16, kernel_size=1, activation='relu'))
+# model.add(UpSampling1D(size=2))
+# model.add(Dense(256, activation='relu'))
+# model.add(Dropout(0.5))
+# model.add(Dense(256, activation='relu'))
+
+
+model = keras_model_fc()
 # for classifier in classifiers:
     # print(classifier)
 classifier = classifiers[1]
@@ -250,15 +368,35 @@ name = classifier.__module__
 print(f'{name}')
 classifier.fit(X_indices_clean_scaled, y_values_clean_2d_scaled)
 y_values_predict_scaled = classifier.predict(X_indices_scaled)
+
 score = classifier.score(X_indices_scaled,y_ground_truth_scaled)
 mse = metrics.mean_squared_error(y_ground_truth_scaled,y_values_predict_scaled)
 r2 = metrics.r2_score(y_ground_truth_scaled,y_values_predict_scaled)
 # classifier.score()
-correlation,p_value = pearsonr(y_ground_truth_scaled,y_values_predict_scaled)
+correlation,p_value = pearsonr(y_ground_truth_scaled.flatten(),y_values_predict_scaled.flatten())
 print(f'Correlation: {correlation:.5f} | MSE:{mse:.5f} |  R2:{r2:.5f}  | Score:{score:.5f}')
 # plt.scatter(y_ground_truth_scaled,y_values_predict_scaled)
 # from sklearn.neural_network import MLPClassifier
+from sklearn import model_selection
+kfold = model_selection.KFold(n_splits=10)
+results = model_selection.cross_val_score(classifier,
+                        X_indices_clean_scaled,
+                        y_values_clean_2d_scaled,
+                        cv=kfold)
 
+from sklearn import pipeline
+
+estimators = []
+estimators.append(('standardize', preprocessing.StandardScaler()))
+estimators.append(('model', classifiers[1]))
+pipeline = pipeline.Pipeline(estimators)
+
+results = model_selection.cross_val_score(pipeline,
+                        X_indices_clean,
+                        y_values_clean_2d,
+                        cv=kfold)
+
+print("Standardized: %.2f (%.2f) MSE" % (results.mean(), results.std()))
 
 #%% Begin RL matrix deconvolvution
 print("Build measurement matrix.")
