@@ -247,7 +247,7 @@ for i in np.arange(0,5):
     model.add(Reshape((layer_shape*2,1)))
     model.add(Conv1D(filters=1,kernel_size=2, activation='relu'))
     model.add(Flatten())
-    model.add(Dropout(0.5))
+    # model.add(Dropout(0.5))
 
     layer_shape = layer_shape*2-1
 
@@ -268,12 +268,13 @@ model.add(Dense(100, activation='relu'))
 model.compile(loss='mean_squared_error',
               optimizer='adam',
               metrics=['accuracy'])
-model.compile(loss='adadelta',
-              optimizer='adam',
-              metrics=['accuracy'])
-model.compile(loss='logcosh',
-              optimizer='sgd',
-              metrics=['accuracy'])
+# loss = keras.optimizers.Adadelta()
+# model.compile(loss='mean_squared_error',
+#               optimizer=loss,
+#               metrics=['accuracy'])
+# model.compile(loss='logcosh',
+#               optimizer='sgd',
+#               metrics=['accuracy'])
 model.build()
 
 from keras import metrics
@@ -289,8 +290,9 @@ y = np.reshape(psf_window_volume,(100,int(samples/100))).T
 # plt.imshow(psf_window_volume[:,:,int(128/4*127/4)])
 model.fit(x, y,
           batch_size=1,
-          epochs=100)
+          epochs=10)
 model.summary()
+u#%%
 
 coords = np.unravel_index(i,astro.shape)
 
@@ -470,16 +472,31 @@ print(f'Nans in H: {nans_in_H} | Ratio: {ratio}')
 plt.imshow(H_nuked)
 plt.imsave('./output/H_nuked.png', H_nuked)
 # imp = SimpleImputer(missing_values=np.NaN, strategy='mean',verbose=1)
-from sklearn.linear_model import BayesianRidge
-#%% Matrix impute
+####
 
-imp = IterativeImputer(missing_values=np.NaN,verbose=2,estimator=BayesianRidge())
-imp.fit(H_nuked)
-H_fixed = imp.transform(H_nuked)
+image_width = np.sqrt(N_v);image_width
+image_height = np.sqrt(N_v)
+matrix_4d = [image_width,
+                image_height,
+                image_width,
+                image_height]
 
-error = measurement_matrix - H_fixed
-sum_error = np.sum(np.sum(error))
-sum_error
-# plt.show()
-plt.savefig("output/H_fixed.png")
-plt.imshow(H_fixed)
+measurement_matrix_4d = np.reshape(measurement_matrix,matrix_4d)
+H_nuked_4d            = np.reshape(H_nuked,matrix_4d)
+
+######
+FLAT_IMPUTE = 0
+if(FLAT_IMPUTE):
+    from sklearn.linear_model import BayesianRidge
+    #%% Matrix impute
+
+    imp = IterativeImputer(missing_values=np.NaN,verbose=2,estimator=BayesianRidge())
+    imp.fit(H_nuked)
+    H_fixed = imp.transform(H_nuked)
+
+    error = measurement_matrix - H_fixed
+    sum_error = np.sum(np.sum(error))
+    sum_error
+    # plt.show()
+    plt.savefig("output/H_fixed.png")
+    plt.imshow(H_fixed)

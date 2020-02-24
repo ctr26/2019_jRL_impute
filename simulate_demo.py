@@ -11,48 +11,7 @@
 
 # https://scikit-image.org/docs/dev/api/skimage.restoration.html#skimage.restoration.richardson_lucy
 
-'''
-Richardson-Lucy algorithm
-
-Ported from the RestoreTools MATLAB package available at:
-http://www.mathcs.emory.edu/~nagy/RestoreTools/
-
-Input: A  -  object defining the coefficient matrix.
-       b  -  Right hand side vector.
-
- Optional Intputs:
-
-       x0      - initial guess (must be strictly positive); default is x0 = A.T*b
-       sigmaSq - the square of the standard deviation for the
-                 white Gaussian read noise (variance)
-       beta    - Poisson parameter for background light level
-       max_iter - integer specifying maximum number of iterations;
-                  default is 100
-       Rtol    - stopping tolerance for the relative residual,
-                 norm(b - A*x)/norm(b)
-                 default is 1e-6
-       NE_Rtol - stopping tolerance for the relative residual,
-                 norm(A.T*b - A.T*A*x)/norm(A.T*b)
-                 default is 1e-6
-
-Output:
-      x  -  solution
-
-Original MATLAB code by J. Nagy, August, 2011
-
-References:
-[1]  B. Lucy.
-    "An iterative method for the rectication of observed distributions."
-     Astronomical Journal, 79:745-754, 1974.
-[2]  W. H. Richardson.
-    "Bayesian-based iterative methods for image restoration.",
-     J. Optical Soc. Amer., 62:55-59, 1972.
- [3]  C. R. Vogel.
-    "Computational Methods for Inverse Problems",
-    SIAM, Philadelphia, PA, 2002
-
-
-'''
+from skimage.metrics import structural_similarity as ssim
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -67,9 +26,10 @@ from scipy import linalg
 from skimage import color, data, restoration
 from skimage.transform import rescale, resize, downscale_local_mean
 from scipy.signal import convolve2d as conv2
-import matlab.engine
+# import matlab.engine
 import pandas as pd
 
+import richardson_lucy
 
 from sklearn.preprocessing import Imputer
 from sklearn.experimental import enable_iterative_imputer
@@ -186,8 +146,6 @@ imp = SimpleImputer(missing_values=np.nan, strategy='mean',verbose=1)
 imp = IterativeImputer(missing_values=np.nan,verbose=1)
 imp.fit(H_nuked)
 H_fixed = imp.transform(H_nuked)
-
-error = H_nuked - H_fixed
-sum_error = np.sum(np.sum(error))
-sum_error
+error = ssim(measurement_matrix,H_fixed)
 # plt.show()
+plt.imshow(H_fixed)
