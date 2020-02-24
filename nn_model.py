@@ -79,7 +79,7 @@ def nd_scaler(x): return StandardScaler().fit_transform(
 
 coords = np.array(np.unravel_index(
                         np.arange(0, measurement_matrix_nuked[0].size),
-                        measurement_matrix_4d_nuked.shape[0:2])).T;coords_nuked.shape
+                        measurement_matrix_4d_nuked.shape[0:2])).T;coords.shape
 
 y_values = measurement_matrix_nuked
 y_ground_truth = measurement_matrix
@@ -290,8 +290,8 @@ seed = 7
 #
 # model.save('keras_model_cov2d_flat_2.h5')
 
-y_predictions = model.predict(x_test)
-score = model.evaluate(x=x_test, y=y_ground_truth_2d_scaled, verbose=1)
+# y_predictions = model.predict(x_test)
+# score = model.evaluate(x=x_test, y=y_ground_truth_2d_scaled, verbose=1)
 
 # plt.imshow(np.sum(y_values_2d_clean, axis=0))
 # plt.imshow(np.sum(y_ground_truth_2d_scaled[nuked_finite_rows], axis=0))
