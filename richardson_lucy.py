@@ -1,6 +1,3 @@
-# Modifed by Craig Russell to work with sparse matrices
-
-
 # __BEGIN_LICENSE__
 #
 # Copyright (C) 2010-2013 Stanford University.
